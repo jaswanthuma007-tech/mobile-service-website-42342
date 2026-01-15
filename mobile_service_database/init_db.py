@@ -1,132 +1,129 @@
 #!/usr/bin/env python3
-"""Initialize SQLite database for mobile_service_database"""
+"""Initialize SQLite database for the Mobile Service Website.
 
-import sqlite3
+Creates/updates the minimal schema needed by the Flask backend:
+- services: list of service offerings for the Services section
+- customer_requests: stores customer form submissions
+
+This script is safe to run multiple times.
+"""
+
 import os
+import sqlite3
 
 DB_NAME = "myapp.db"
-DB_USER = "kaviasqlite"  # Not used for SQLite, but kept for consistency
-DB_PASSWORD = "kaviadefaultpassword"  # Not used for SQLite, but kept for consistency
-DB_PORT = "5000"  # Not used for SQLite, but kept for consistency
 
-print("Starting SQLite setup...")
+print("Starting SQLite setup for Mobile Service Website...")
 
-# Check if database already exists
 db_exists = os.path.exists(DB_NAME)
 if db_exists:
     print(f"SQLite database already exists at {DB_NAME}")
-    # Verify it's accessible
-    try:
-        conn = sqlite3.connect(DB_NAME)
-        conn.execute("SELECT 1")
-        conn.close()
-        print("Database is accessible and working.")
-    except Exception as e:
-        print(f"Warning: Database exists but may be corrupted: {e}")
 else:
     print("Creating new SQLite database...")
 
-# Create database with sample tables
 conn = sqlite3.connect(DB_NAME)
+conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
 
-# Create initial schema
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS app_info (
+# Enable foreign keys (good practice even if not used heavily).
+cursor.execute("PRAGMA foreign_keys = ON")
+
+# Core schema
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS services (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        key TEXT UNIQUE NOT NULL,
-        value TEXT,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        icon TEXT,
+        price_hint TEXT,
+        sort_order INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
-""")
+"""
+)
 
-# Create a sample users table as an example
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS customer_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        email TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        email TEXT NOT NULL,
+        mobile_model TEXT NOT NULL,
+        problem TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
-""")
+"""
+)
 
-# Insert initial data
-cursor.execute("INSERT OR REPLACE INTO app_info (key, value) VALUES (?, ?)", 
-               ("project_name", "mobile_service_database"))
-cursor.execute("INSERT OR REPLACE INTO app_info (key, value) VALUES (?, ?)", 
-               ("version", "0.1.0"))
-cursor.execute("INSERT OR REPLACE INTO app_info (key, value) VALUES (?, ?)", 
-               ("author", "John Doe"))
-cursor.execute("INSERT OR REPLACE INTO app_info (key, value) VALUES (?, ?)", 
-               ("description", ""))
+# Lightweight content tables for About/Contact (optional but convenient)
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS site_content (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+)
+
+# Seed services if empty
+cursor.execute("SELECT COUNT(*) AS c FROM services")
+count = cursor.fetchone()["c"]
+if count == 0:
+    cursor.executemany(
+        """
+        INSERT INTO services (title, description, icon, price_hint, sort_order)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                "Screen Replacement",
+                "Cracked, unresponsive, or flickering displays. Fast assessment and quality parts.",
+                "📱",
+                "Typical: $79–$249",
+                1,
+            ),
+            (
+                "Battery & Charging",
+                "Battery draining quickly or device not charging. Diagnostics and replacements.",
+                "🔋",
+                "Typical: $49–$129",
+                2,
+            ),
+            (
+                "Software Troubleshooting",
+                "Slow performance, boot loops, app crashes, updates, and data migration support.",
+                "🧠",
+                "Typical: $39–$99",
+                3,
+            ),
+            (
+                "Water Damage Check",
+                "Inspection, cleaning guidance, and next-step recommendations.",
+                "💧",
+                "Assessment: $29+",
+                4,
+            ),
+        ],
+    )
+    print("Seeded default services.")
+
+# Seed site content if missing
+defaults = {
+    "about_description": "We provide practical, honest mobile repair and troubleshooting. Our goal is to get your device working with clear options and fair pricing.",
+    "contact_hours": "Mon–Sat: 9am–7pm • Sun: 11am–4pm",
+    "contact_phone": "+1 (555) 123-4567",
+    "contact_email": "support@example.com",
+}
+for k, v in defaults.items():
+    cursor.execute("INSERT OR IGNORE INTO site_content (key, value) VALUES (?, ?)", (k, v))
 
 conn.commit()
-
-# Get database statistics
-cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-table_count = cursor.fetchone()[0]
-
-cursor.execute("SELECT COUNT(*) FROM app_info")
-record_count = cursor.fetchone()[0]
-
 conn.close()
 
-# Save connection information to a file
-current_dir = os.getcwd()
-connection_string = f"sqlite:///{current_dir}/{DB_NAME}"
-
-try:
-    with open("db_connection.txt", "w") as f:
-        f.write(f"# SQLite connection methods:\n")
-        f.write(f"# Python: sqlite3.connect('{DB_NAME}')\n")
-        f.write(f"# Connection string: {connection_string}\n")
-        f.write(f"# File path: {current_dir}/{DB_NAME}\n")
-    print("Connection information saved to db_connection.txt")
-except Exception as e:
-    print(f"Warning: Could not save connection info: {e}")
-
-# Create environment variables file for Node.js viewer
-db_path = os.path.abspath(DB_NAME)
-
-# Ensure db_visualizer directory exists
-if not os.path.exists("db_visualizer"):
-    os.makedirs("db_visualizer", exist_ok=True)
-    print("Created db_visualizer directory")
-
-try:
-    with open("db_visualizer/sqlite.env", "w") as f:
-        f.write(f"export SQLITE_DB=\"{db_path}\"\n")
-    print(f"Environment variables saved to db_visualizer/sqlite.env")
-except Exception as e:
-    print(f"Warning: Could not save environment variables: {e}")
-
-print("\nSQLite setup complete!")
+print("SQLite setup complete.")
 print(f"Database: {DB_NAME}")
-print(f"Location: {current_dir}/{DB_NAME}")
-print("")
-
-print("To use with Node.js viewer, run: source db_visualizer/sqlite.env")
-
-print("\nTo connect to the database, use one of the following methods:")
-print(f"1. Python: sqlite3.connect('{DB_NAME}')")
-print(f"2. Connection string: {connection_string}")
-print(f"3. Direct file access: {current_dir}/{DB_NAME}")
-print("")
-
-print("Database statistics:")
-print(f"  Tables: {table_count}")
-print(f"  App info records: {record_count}")
-
-# If sqlite3 CLI is available, show how to use it
-try:
-    import subprocess
-    result = subprocess.run(['which', 'sqlite3'], capture_output=True, text=True)
-    if result.returncode == 0:
-        print("")
-        print("SQLite CLI is available. You can also use:")
-        print(f"  sqlite3 {DB_NAME}")
-except:
-    pass
-
-# Exit successfully
-print("\nScript completed successfully.")
+print(f"Location: {os.path.abspath(DB_NAME)}")
+print("Script completed successfully.")
